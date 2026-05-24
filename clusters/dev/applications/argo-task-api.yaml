@@ -1,0 +1,39 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argo-task-api
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/leehrm/task-api-platform.git
+    targetRevision: main
+    path: helm/task-api
+    helm:
+      values: |
+        image:
+          repository: 519330023984.dkr.ecr.ap-northeast-1.amazonaws.com/task-api
+          tag: "manual-test"
+          pullPolicy: Always
+
+        env:
+          DB_HOST: argo-task-api-postgresdb
+          DB_PORT: "5432"
+          DB_NAME: taskdb
+          DB_USER: taskuser
+          DB_PASSWORD: taskpass
+
+        ingress:
+          enabled: false
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argo-task-api
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
