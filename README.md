@@ -1,8 +1,8 @@
 # gitops-argocd
 
-`gitops-argocd`는 ArgoCD 기반 GitOps 배포 상태를 관리하기 위한 repository이다.
+`gitops-argocd`는 ArgoCD 기반 GitOps 배포 상태를 관리하는 repository입니다.
 
-이 repository는 `task-api-platform`에서 빌드된 Docker image를 EKS에 배포하기 위한 ArgoCD Application manifest를 관리한다.
+이 repository는 `task-api-platform`에서 빌드된 Docker image를 EKS에 배포하기 위한 ArgoCD Application manifest를 관리합니다. 애플리케이션 코드는 `task-api-platform`에서 관리하고, 실제 EKS에 어떤 image tag를 배포할지는 `gitops-argocd`의 `deploy/dev` branch에서 관리합니다.
 
 ---
 
@@ -10,27 +10,56 @@
 
 | Repository | 역할 |
 |---|---|
-| `task-api-platform` | FastAPI 애플리케이션 코드, Dockerfile, Helm Chart, GitHub Actions workflow |
-| `task-api-gitops` | FluxCD 기반 GitOps 결과 |
-| `gitops-argocd` | ArgoCD 기반 GitOps 배포 상태 |
+| `task-api-platform` | FastAPI 애플리케이션 코드, Dockerfile, Helm Chart, GitHub Actions workflow를 관리. |
+| `task-api-gitops` | FluxCD 기반 GitOps 학습 결과. |
+| `gitops-argocd` | ArgoCD 기반 GitOps 배포 상태를 관리. |
+
+`task-api-gitops`에서는 FluxCD로 GitOps 흐름을 학습했고, `gitops-argocd`에서는 ArgoCD Auto Sync 기반 배포 흐름을 분리하기 위해 repository를 새로 구성했습니다.
 
 ---
 
 ## Branch 전략
 
+현재 사용 중인 branch는 다음과 같습니다.
+
 ```text
 main
-  - 기본 브랜치
-  - README 및 repository 설명
-  - 직접 배포 대상 아님
+  - 기본 브랜치입니다.
+  - README 및 repository 설명을 관리합니다.
+  - ArgoCD가 직접 바라보는 배포 브랜치는 아닙니다.
 
 deploy/dev
-  - ArgoCD dev-root Application이 바라보는 브랜치
-  - dev 환경의 실제 배포 상태 관리
-  - GitHub Actions가 image tag 변경 commit을 push하는 브랜치
+  - ArgoCD dev-root Application이 바라보는 브랜치입니다.
+  - dev 환경의 실제 배포 상태를 관리합니다.
+  - GitHub Actions가 image tag 변경 commit을 push하는 브랜치입니다.
 ```
 
-현재 ArgoCD는 `deploy/dev` branch를 기준으로 동작한다.
+현재 ArgoCD는 `deploy/dev` branch를 기준으로 동작합니다.
+
+```text
+GitHub Actions가 deploy/dev에 image tag 변경 commit push
+  ↓
+ArgoCD dev-root Application이 변경 감지
+  ↓
+argo-task-api Application 갱신
+  ↓
+EKS에 새 image 배포
+```
+
+---
+
+## Directory 구조
+
+```text
+gitops-argocd
+├── README.md
+└── clusters
+    └── dev
+        ├── applications
+        │   └── argo-task-api.yaml
+        └── bootstrap
+            └── root-application.yaml
+```
 
 ---
 
@@ -38,30 +67,30 @@ deploy/dev
 
 | 파일 | 역할 |
 |---|---|
-| `clusters/dev/bootstrap/root-application.yaml` | ArgoCD가 `gitops-argocd` repository의 `clusters/dev/applications` 경로를 감시하도록 하는 Root Application |
-| `clusters/dev/applications/argo-task-api.yaml` | 실제 `task-api`를 배포하는 ArgoCD Child Application |
+| `clusters/dev/bootstrap/root-application.yaml` | ArgoCD가 `gitops-argocd` repository의 `clusters/dev/applications` 경로를 감시하도록 하는 Root Application. |
+| `clusters/dev/applications/argo-task-api.yaml` | 실제 `task-api` 애플리케이션을 배포하는 ArgoCD Child Application. |
 
 ---
 
 ## App of Apps 구조
 
-이 repository는 ArgoCD의 App of Apps 패턴을 사용한다.
+이 repository는 ArgoCD의 App of Apps 패턴을 사용합니다.
 
 ```text
 dev-root Application
   ↓
 gitops-argocd/deploy/dev/clusters/dev/applications 감시
   ↓
-argo-task-api Application 생성/갱신
+argo-task-api Application 생성 또는 갱신
   ↓
-task-api-platform Helm Chart 참조
+task-api-platform repository의 Helm Chart 참조
   ↓
 EKS argo-task-api namespace에 배포
 ```
 
 ### Root Application
 
-`dev-root` Application은 `gitops-argocd` repository를 감시한다.
+`dev-root` Application은 `gitops-argocd` repository를 감시합니다.
 
 ```yaml
 source:
@@ -70,9 +99,11 @@ source:
   path: clusters/dev/applications
 ```
 
+`targetRevision: deploy/dev`. ArgoCD가 이 branch를 감시하기 때문에 GitHub Actions도 같은 branch에 image tag 변경 commit을 push해야 합니다.
+
 ### Child Application
 
-`argo-task-api` Application은 실제 애플리케이션을 배포한다.
+`argo-task-api` Application은 실제 애플리케이션을 배포합니다.
 
 ```yaml
 source:
@@ -81,51 +112,14 @@ source:
   path: helm/task-api
 ```
 
----
+`argo-task-api` Application은 `task-api-platform`의 Helm Chart를 사용하고, `gitops-argocd`에 정의된 Helm values override를 통해 image tag와 배포 환경 설정을 변경합니다.
 
-## ArgoCD Application 상태 확인
-
-```bash
-kubectl get app -n argocd
-```
-
-예상 결과:
-
-```text
-NAME            SYNC STATUS   HEALTH STATUS
-argo-task-api   Synced        Healthy
-dev-root        Synced        Healthy
-```
-
----
-
-## 배포 Namespace
-
-실제 애플리케이션은 다음 namespace에 배포된다.
-
-```text
-argo-task-api
-```
-
-확인:
-
-```bash
-kubectl get pods -n argo-task-api
-```
-
-예상 결과:
-
-```text
-NAME                             READY   STATUS
-argo-task-api-xxxxxxxxxx-xxxxx   1/1     Running
-argo-task-api-postgresdb-0       1/1     Running
-```
 
 ---
 
 ## Image Tag 업데이트 방식
 
-`task-api-platform` repository의 GitHub Actions workflow가 실행되면 다음 파일의 image tag를 자동으로 수정한다.
+`task-api-platform` repository의 GitHub Actions workflow가 실행되면 다음 파일의 image tag를 자동으로 수정합니다.
 
 ```text
 clusters/dev/applications/argo-task-api.yaml
@@ -140,28 +134,55 @@ image:
   pullPolicy: Always
 ```
 
-GitHub Actions가 이 파일을 수정하고 `deploy/dev` branch에 commit/push하면, ArgoCD가 변경을 감지해 EKS에 새 image를 배포한다.
+GitHub Actions는 다음 순서로 동작합니다.
+
+```text
+task-api-platform push
+  ↓
+GitHub Actions 실행
+  ↓
+Docker image build
+  ↓
+Amazon ECR push
+  ↓
+gitops-argocd/deploy/dev의 image tag 수정
+  ↓
+gitops-argocd/deploy/dev에 commit/push
+  ↓
+ArgoCD Auto Sync
+  ↓
+EKS Deployment rollout
+```
 
 ---
 
-## 현재 배포 이미지 확인
+## Image Tag 전략
 
-```bash
-kubectl get deploy argo-task-api -n argo-task-api \
-  -o=jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
-```
+이번 구성에서는 Docker image tag로 Git commit SHA 앞 7자리를 사용합니다.
 
 예시:
 
 ```text
-519330023984.dkr.ecr.ap-northeast-1.amazonaws.com/task-api:6362dbf
+Git commit SHA: 6362dbf1234...
+Docker image tag: 6362dbf
 ```
+
+Git SHA 기반 tag를 사용하는 이유는 다음과 같습니다.
+
+| 이유 | 설명 |
+|---|---|
+| 추적성 | 현재 배포된 image가 어떤 Git commit에서 만들어졌는지 확인할 수 있음. |
+| Rollback 용이 | 이전 GitOps commit으로 되돌리면 이전 image tag로 배포할 수 있음. |
+| `latest`보다 안전 | `latest`는 같은 tag가 계속 덮어써져 어떤 코드인지 추적하기 어려움. |
+| GitOps와 적합 | GitOps repo에 image tag 변경 이력이 commit으로 남음. |
+
+수동 테스트에서는 `manual-test` tag를 사용했고, 자동화 이후에는 Git short SHA tag를 사용합니다.
 
 ---
 
-## 주요 설정
+## 주요 Helm Values Override
 
-`argo-task-api.yaml`에서는 Helm values를 override하여 ArgoCD 배포 환경에 맞게 설정한다.
+`argo-task-api.yaml`에서는 Helm values를 override하여 ArgoCD 배포 환경에 맞게 설정합니다.
 
 ```yaml
 image:
@@ -180,39 +201,78 @@ ingress:
   enabled: false
 ```
 
-### 설정 이유
+설정 이유는 다음과 같습니다.
 
 | 설정 | 이유 |
 |---|---|
-| `pullPolicy: Always` | ECR에서 image를 pull하도록 설정 |
-| `DB_HOST: argo-task-api-postgresdb` | ArgoCD 배포 시 PostgreSQL Service 이름에 맞춤 |
-| `ingress.enabled: false` | Ingress Controller가 없는 상태에서 ArgoCD Health가 Progressing으로 남는 문제 방지 |
+| `pullPolicy: Always` | EKS Node가 ECR에서 image를 pull하도록 설정합니다. |
+| `DB_HOST: argo-task-api-postgresdb` | ArgoCD 배포 시 생성되는 PostgreSQL Service 이름에 맞춥니다. |
+| `ingress.enabled: false` | Ingress Controller가 없는 상태에서 ArgoCD Health가 `Progressing`으로 남는 문제를 방지합니다. |
 
 ---
 
-## 배포 흐름
+## ArgoCD 상태 확인
 
-```text
-task-api-platform push
-  ↓
-GitHub Actions
-  ↓
-Docker image build
-  ↓
-ECR push
-  ↓
-gitops-argocd/deploy/dev image tag 변경
-  ↓
-dev-root Application이 변경 감지
-  ↓
-argo-task-api Application 갱신
-  ↓
-EKS Deployment rollout
+ArgoCD Application 상태는 다음 명령어로 확인합니다.
+
+```bash
+kubectl get app -n argocd
 ```
 
+결과:
+
+```text
+NAME            SYNC STATUS   HEALTH STATUS
+argo-task-api   Synced        Healthy
+dev-root        Synced        Healthy
+```
+
+`dev-root`와 `argo-task-api`가 모두 `Synced / Healthy`이면 GitOps 동기화와 애플리케이션 배포가 정상입니다.
+
 ---
 
-## 정리
-- `gitops-argocd`는 ArgoCD가 바라보는 배포 상태 repository이다.
-- 애플리케이션 코드는 `task-api-platform`에서 관리하고, 실제 EKS에 어떤 image를 배포할지는 `gitops-argocd`의 `deploy/dev` branch에서 관리한다.
-- 이를 통해 CI/CD와 GitOps를 분리하고, 배포 이력을 Git commit으로 추적할 수 있다.
+## 실제 배포 Image 확인
+
+EKS Deployment에 반영된 image는 다음 명령어로 확인합니다.
+
+```bash
+kubectl get deploy argo-task-api -n argo-task-api \
+  -o=jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+```
+
+예시:
+
+```text
+519330023984.dkr.ecr.ap-northeast-1.amazonaws.com/task-api:6362dbf
+```
+
+이 값이 GitHub Actions가 생성한 Git short SHA tag와 같으면 자동 배포가 정상적으로 완료된 것입니다.
+
+---
+
+## 운영 흐름 요약
+
+현재 구성의 전체 흐름은 다음과 같습니다.
+
+```text
+Developer
+  ↓
+task-api-platform에 code push
+  ↓
+GitHub Actions
+  - Python syntax check
+  - Docker build
+  - ECR push
+  - gitops-argocd image tag update
+  ↓
+gitops-argocd/deploy/dev
+  ↓
+ArgoCD dev-root Application
+  ↓
+ArgoCD argo-task-api Application
+  ↓
+EKS argo-task-api namespace
+```
+
+이 구성에서 GitHub Actions는 Kubernetes에 직접 배포하지 않습니다.
+GitHub Actions는 `gitops-argocd`의 image tag만 변경하고, 실제 Kubernetes 배포는 ArgoCD가 수행합니다.
