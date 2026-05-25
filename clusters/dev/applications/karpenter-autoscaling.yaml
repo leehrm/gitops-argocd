@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: karpenter-autoscaling
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/leehrm/gitops-argocd.git
+    targetRevision: deploy/dev
+    path: clusters/dev/karpenter
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: karpenter-test
+
+  syncPolicy:
+    automated:
+      prune: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
