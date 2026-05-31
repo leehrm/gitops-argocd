@@ -1,0 +1,22 @@
+===== apps =====
+NAME                    SYNC STATUS   HEALTH STATUS
+argo-task-api           Synced        Healthy
+dev-root                Synced        Healthy
+karpenter-autoscaling   Synced        Healthy
+
+===== ec2nodeclass =====
+NAME      READY   AGE
+default   True    13m
+
+===== nodepool =====
+NAME      NODECLASS   NODES   READY   AGE
+default   default     0       True    13m
+
+===== nodeclaim =====
+
+===== nodes =====
+NAME                                              STATUS   ROLES    AGE   VERSION               WORKLOAD
+ip-10-0-101-232.ap-northeast-1.compute.internal   Ready    <none>   55m   v1.35.5-eks-3385e9b   
+ip-10-0-102-96.ap-northeast-1.compute.internal    Ready    <none>   55m   v1.35.5-eks-3385e9b   
+
+===== karpenter-test pods =====

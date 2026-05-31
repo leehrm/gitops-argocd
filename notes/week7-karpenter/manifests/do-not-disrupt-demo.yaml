@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dnd-demo
+  namespace: karpenter-test
+  labels:
+    app: dnd-demo
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: dnd-demo
+  template:
+    metadata:
+      labels:
+        app: dnd-demo
+      annotations:
+        karpenter.sh/do-not-disrupt: "true"
+    spec:
+      terminationGracePeriodSeconds: 0
+      nodeSelector:
+        workload: karpenter
+      containers:
+        - name: pause
+          image: public.ecr.aws/eks-distro/kubernetes/pause:3.7
+          resources:
+            requests:
+              cpu: "700m"
+              memory: "256Mi"
