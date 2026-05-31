@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pdb-demo
+  namespace: karpenter-test
+  labels:
+    app: pdb-demo
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: pdb-demo
+  template:
+    metadata:
+      labels:
+        app: pdb-demo
+    spec:
+      terminationGracePeriodSeconds: 0
+      nodeSelector:
+        workload: karpenter
+      containers:
+        - name: pause
+          image: public.ecr.aws/eks-distro/kubernetes/pause:3.7
+          resources:
+            requests:
+              cpu: "700m"
+              memory: "256Mi"
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: pdb-demo
+  namespace: karpenter-test
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: pdb-demo
