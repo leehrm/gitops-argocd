@@ -12,6 +12,9 @@ spec:
     path: helm/task-api
     helm:
       values: |
+        postgresdb:
+          enabled: false
+
         image:
           repository: 519330023984.dkr.ecr.ap-northeast-1.amazonaws.com/task-api
           tag: "4ef2c3a"
@@ -19,13 +22,24 @@ spec:
 
         env:
           DB_HOST: argo-task-api-postgresdb
+          DB_PRIMARY_HOST: "aws-eks-terraform-lab-postgres-primary.c3888iw0yn00.ap-northeast-1.rds.amazonaws.com"
+          DB_READ_HOST: "aws-eks-terraform-lab-postgres-replica.c3888iw0yn00.ap-northeast-1.rds.amazonaws.com"
           DB_PORT: "5432"
           DB_NAME: taskdb
           DB_USER: taskuser
           DB_PASSWORD: taskpass
 
+          CACHE_ENABLED: "false"
+          CACHE_TTL_SECONDS: "60"
+          REDIS_HOST: "redis-master.redis.svc.cluster.local"
+          REDIS_PORT: "6379"
+
         ingress:
           enabled: false
+
+        secretEnv:
+          DB_PASSWORD: "ChangeMe1234!"
+          REDIS_PASSWORD: "redispass"
 
   destination:
     server: https://kubernetes.default.svc
