@@ -21,7 +21,7 @@ spec:
           pullPolicy: Always
 
         env:
-          DB_HOST: argo-task-api-postgresdb
+          DB_HOST: "aws-eks-terraform-lab-postgres-primary.c3888iw0yn00.ap-northeast-1.rds.amazonaws.com"
           DB_PRIMARY_HOST: "aws-eks-terraform-lab-postgres-primary.c3888iw0yn00.ap-northeast-1.rds.amazonaws.com"
           DB_READ_HOST: "aws-eks-terraform-lab-postgres-replica.c3888iw0yn00.ap-northeast-1.rds.amazonaws.com"
           DB_PORT: "5432"
