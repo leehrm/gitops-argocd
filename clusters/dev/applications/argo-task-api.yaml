@@ -29,7 +29,7 @@ spec:
           DB_USER: taskuser
           DB_PASSWORD: taskpass
 
-          CACHE_ENABLED: "false"
+          CACHE_ENABLED: "true"
           CACHE_TTL_SECONDS: "60"
           REDIS_HOST: "redis-master.redis.svc.cluster.local"
           REDIS_PORT: "6379"
