@@ -1,0 +1,105 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: task-api-grafana-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  task-api-dashboard.json: |
+    {
+      "id": null,
+      "uid": "task-api-custom-metrics",
+      "title": "Task API / Custom Metrics",
+      "tags": ["task-api", "week9", "prometheus"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "10s",
+      "panels": [
+        {
+          "type": "timeseries",
+          "title": "HTTP Request Rate by Path / Status",
+          "id": 1,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum by (method, path, status) (rate(http_request_total[5m]))",
+              "legendFormat": "{{method}} {{path}} {{status}}"
+            }
+          ],
+          "gridPos": { "x": 0, "y": 0, "w": 24, "h": 8 }
+        },
+        {
+          "type": "timeseries",
+          "title": "Cache Hit / Miss Rate",
+          "id": 2,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum(rate(cache_hit_total[5m]))",
+              "legendFormat": "cache hit"
+            },
+            {
+              "expr": "sum(rate(cache_miss_total[5m]))",
+              "legendFormat": "cache miss"
+            }
+          ],
+          "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 }
+        },
+        {
+          "type": "stat",
+          "title": "Cache Hit Ratio",
+          "id": 3,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum(rate(cache_hit_total[5m])) / (sum(rate(cache_hit_total[5m])) + sum(rate(cache_miss_total[5m])))",
+              "legendFormat": "hit ratio"
+            }
+          ],
+          "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 }
+        },
+        {
+          "type": "timeseries",
+          "title": "DB Query p95 Latency",
+          "id": 4,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum by (le, operation, target) (rate(db_query_latency_seconds_bucket[5m])))",
+              "legendFormat": "{{operation}} / {{target}}"
+            }
+          ],
+          "gridPos": { "x": 0, "y": 16, "w": 24, "h": 8 }
+        },
+        {
+          "type": "timeseries",
+          "title": "DB Query Average Latency",
+          "id": 5,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum by (operation, target) (rate(db_query_latency_seconds_sum[5m])) / sum by (operation, target) (rate(db_query_latency_seconds_count[5m]))",
+              "legendFormat": "{{operation}} / {{target}}"
+            }
+          ],
+          "gridPos": { "x": 0, "y": 24, "w": 24, "h": 8 }
+        }
+      ]
+    }
