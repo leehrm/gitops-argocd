@@ -50,6 +50,8 @@ spec:
             alertmanagerConfigNamespaceSelector:
               matchLabels:
                 kubernetes.io/metadata.name: monitoring
+            alertmanagerConfigMatcherStrategy:
+              type: None
 
   destination:
     server: https://kubernetes.default.svc
