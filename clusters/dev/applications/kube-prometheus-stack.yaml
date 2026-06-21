@@ -22,6 +22,8 @@ spec:
             serviceMonitorNamespaceSelector: {}
             podMonitorSelectorNilUsesHelmValues: false
             podMonitorNamespaceSelector: {}
+            ruleSelectorNilUsesHelmValues: false
+            ruleNamespaceSelector: {}
 
         grafana:
           enabled: true
@@ -33,9 +35,21 @@ spec:
               searchNamespace: ALL
               label: grafana_dashboard
               labelValue: "1"
-
+            datasources:
+              enabled: true
+              searchNamespace: ALL
+              label: grafana_datasource
+              labelValue: "1"
+       
         alertmanager:
           enabled: true
+          alertmanagerSpec:
+            alertmanagerConfigSelector:
+              matchLabels:
+                alertmanagerConfig: task-api-slack
+            alertmanagerConfigNamespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: monitoring
 
   destination:
     server: https://kubernetes.default.svc

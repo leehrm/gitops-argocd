@@ -34,6 +34,9 @@ spec:
           REDIS_HOST: "redis-master.redis.svc.cluster.local"
           REDIS_PORT: "6379"
 
+          ENABLE_DEBUG_ENDPOINTS: "true"
+          DEBUG_SLOW_SECONDS: "0.3"
+
         ingress:
           enabled: false
 
