@@ -1,0 +1,68 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: task-api-alert-rules
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: task-api
+    app.kubernetes.io/component: api
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: task-api.recording.rules
+      interval: 30s
+      rules:
+        - record: task_api:http_request_rate5m
+          expr: |
+            sum by (method, path, status) (
+              rate(http_request_total{namespace="argo-task-api"}[5m])
+            )
+
+        - record: task_api:5xx_error_rate_ratio5m
+          expr: |
+            sum(rate(http_request_total{namespace="argo-task-api", status=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(http_request_total{namespace="argo-task-api"}[5m])), 0.001)
+
+        - record: task_api:http_request_duration_seconds:p95_5m
+          expr: |
+            histogram_quantile(
+              0.95,
+              sum by (le) (
+                rate(http_request_duration_seconds_bucket{namespace="argo-task-api"}[5m])
+              )
+            )
+
+    - name: task-api.alerts
+      interval: 30s
+      rules:
+        - alert: TaskApiHigh5xxErrorRate
+          expr: task_api:5xx_error_rate_ratio5m * 100 > 5
+          for: 5m
+          labels:
+            severity: warning
+            service: task-api
+          annotations:
+            summary: "Task API 5xx error rate is higher than 5%"
+            description: "Task API 5xx error rate has been above 5% for 5 minutes. Current value = {{ $value }}%."
+
+        - alert: TaskApiHighP95Latency
+          expr: task_api:http_request_duration_seconds:p95_5m > 0.2
+          for: 5m
+          labels:
+            severity: warning
+            service: task-api
+          annotations:
+            summary: "Task API p95 latency is higher than 200ms"
+            description: "Task API p95 latency has been above 200ms for 5 minutes. Current value = {{ $value }} seconds."
+
+        - alert: TaskApiRedisDown
+          expr: |
+            up{namespace="redis", job=~".*redis.*"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            service: redis
+          annotations:
+            summary: "Redis target is down"
+            description: "Prometheus cannot scrape Redis metrics for more than 2 minutes. Check Redis pod, Service, and ServiceMonitor."

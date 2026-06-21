@@ -1,0 +1,42 @@
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: task-api-slack
+  namespace: monitoring
+  labels:
+    alertmanagerConfig: task-api-slack
+spec:
+  route:
+    groupBy:
+      - namespace
+      - alertname
+      - severity
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 1h
+    receiver: slack
+    routes:
+      - receiver: "null"
+        matchers:
+          - name: alertname
+            value: Watchdog
+            matchType: "="
+
+  receivers:
+    - name: "null"
+
+    - name: slack
+      slackConfigs:
+        - apiURL:
+            name: alertmanager-slack-webhook
+            key: slack-webhook-url
+          channel: "#task-api-alerts"
+          sendResolved: true
+          title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+          text: >-
+            {{ range .Alerts }}
+            *Summary:* {{ .Annotations.summary }}
+            *Description:* {{ .Annotations.description }}
+            *Severity:* {{ .Labels.severity }}
+            *Namespace:* {{ .Labels.namespace }}
+            {{ end }}
