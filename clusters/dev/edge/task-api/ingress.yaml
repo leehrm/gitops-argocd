@@ -28,7 +28,7 @@ metadata:
   namespace: argo-task-api
   annotations:
     argocd.argoproj.io/sync-wave: "1"
-    cert-manager.io/cluster-issuer: letsencrypt-staging
+    cert-manager.io/cluster-issuer: letsencrypt-production
     acme.cert-manager.io/http01-ingress-ingressclassname: traefik
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
