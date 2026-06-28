@@ -1,0 +1,83 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: traefik
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://traefik.github.io/charts
+    chart: traefik
+    targetRevision: v41.0.0
+    helm:
+      values: |
+        deployment:
+          replicas: 1
+
+        ingressClass:
+          enabled: true
+          isDefaultClass: false
+          name: traefik
+
+        providers:
+          kubernetesCRD:
+            enabled: true
+            allowCrossNamespace: false
+          kubernetesIngress:
+            enabled: true
+            ingressClass: traefik
+            publishedService:
+              enabled: true
+          kubernetesGateway:
+            enabled: false
+
+        gateway:
+          enabled: false
+
+        gatewayClass:
+          enabled: false
+
+        ports:
+          traefik:
+            expose:
+              default: false
+
+          web:
+            port: 8000
+            expose:
+              default: true
+            exposedPort: 80
+
+          websecure:
+            port: 8443
+            expose:
+              default: true
+            exposedPort: 443
+            http:
+              tls:
+                enabled: true
+
+        service:
+          enabled: true
+          spec:
+            type: LoadBalancer
+
+        metrics:
+          prometheus:
+            serviceMonitor:
+              enabled: true
+              namespace: monitoring
+              additionalLabels:
+                release: kube-prometheus-stack
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: traefik
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
