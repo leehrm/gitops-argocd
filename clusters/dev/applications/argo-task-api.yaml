@@ -23,7 +23,7 @@ spec:
         autoscaling:
           enabled: true
           minReplicas: 2
-          maxReplicas: 5
+          maxReplicas: 8
           targetCPUUtilizationPercentage: 60
           behavior:
             scaleDown:
@@ -35,10 +35,10 @@ spec:
 
         resources:
           requests:
-            cpu: 100m
+            cpu: 1000m
             memory: 128Mi
           limits:
-            cpu: 500m
+            cpu: 1500m
             memory: 512Mi
 
         env:
