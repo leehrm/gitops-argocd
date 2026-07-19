@@ -17,7 +17,7 @@ spec:
 
         image:
           repository: 519330023984.dkr.ecr.ap-northeast-1.amazonaws.com/task-api
-          tag: "d07d941"
+          tag: "2a0bc15"
           pullPolicy: Always
 
         autoscaling:
