@@ -27,8 +27,10 @@ spec:
 
         grafana:
           enabled: true
-          adminUser: admin
-          adminPassword: admin
+          admin:
+            existingSecret: grafana-admin-credentials
+            userKey: admin-user
+            passwordKey: admin-password
           sidecar:
             dashboards:
               enabled: true
