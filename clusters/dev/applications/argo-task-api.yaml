@@ -60,9 +60,9 @@ spec:
         ingress:
           enabled: false
 
-        secretEnv:
-          DB_PASSWORD: "ChangeMe1234!"
-          REDIS_PASSWORD: "redispass"
+        secret:
+          create: false
+          existingSecret: task-api-runtime-secrets
 
   destination:
     server: https://kubernetes.default.svc
