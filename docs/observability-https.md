@@ -128,8 +128,8 @@ TTL은 지정하지 않는다. Ingress annotation으로만 설정 가능한데 `
 
 기존 5개 레코드는 손으로 만들어 TXT 소유권이 없다. 1회 삭제 후 ExternalDNS가 재생성하게 한다.
 
-1. `dryRun: true`로 배포해 로그에서 생성 대상을 확인한다.
-2. `dryRun`을 제거한다.
+1. 배포 후 로그가 `All records are already up to date`인지 확인한다. 기존 레코드에는 소유권 TXT가 없어 ExternalDNS가 손대지 않는 것이 정상이다.
+2. 시험 실행이 필요하면 chart 값이 아니라 `extraArgs`에 `--dry-run`을 넣는다. chart 1.21.1에는 `dryRun` 값이 없어 무시된다.
 3. `grafana` CNAME 1건만 삭제하고 CNAME + `edns-grafana` TXT가 생성되는지 본다.
 4. 성공하면 `prometheus`, `alertmanager`, `argocd`를 삭제한다.
 5. 마지막에 `task-api`를 삭제한다.
