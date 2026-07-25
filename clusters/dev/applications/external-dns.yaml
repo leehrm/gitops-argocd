@@ -29,8 +29,12 @@ spec:
         txtOwnerId: eks-dev
         txtPrefix: edns-
 
+        # --cloudflare-proxied 는 지정하지 않는다.
+        # kingpin 이 불리언 플래그의 =false 형식을 거부해 기동에 실패한다
+        # (flag parsing error: unexpected false).
+        # 기본값이 이미 false(DNS only)이며, 필요하면 Ingress 의
+        # external-dns.alpha.kubernetes.io/cloudflare-proxied annotation 으로 켠다.
         extraArgs:
-          - --cloudflare-proxied=false
           - --ingress-class=traefik
 
         env:

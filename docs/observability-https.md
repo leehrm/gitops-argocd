@@ -118,7 +118,9 @@ Ingress(host) → ExternalDNS → Cloudflare API → CNAME + TXT(소유권)
 | `txtOwnerId` | `eks-dev` | **변경 금지.** 바뀌면 기존 레코드 소유권을 잃는다 |
 | `txtPrefix` | `edns-` | CNAME과 TXT 이름을 분리한다. DNS 규격상 CNAME은 같은 이름에 다른 레코드와 공존할 수 없다 |
 | `sources` | `[ingress]` | Service를 넣으면 Traefik LB 자기 자신을 등록한다 |
-| `--cloudflare-proxied=false` | | HTTP-01 발급을 위해 DNS only를 유지해야 한다 |
+| `--ingress-class` | `traefik` | 감시 대상을 Traefik Ingress로 한정한다 |
+
+`--cloudflare-proxied` 는 **지정하지 않는다.** 인자 파서(kingpin)가 불리언 플래그의 `=false` 형식을 거부해 `flag parsing error: unexpected false` 로 기동에 실패한다. 기본값이 이미 `false`(DNS only)라 HTTP-01 발급에 문제가 없다. 특정 호스트만 Proxied로 바꾸려면 해당 Ingress에 `external-dns.alpha.kubernetes.io/cloudflare-proxied` annotation을 붙인다.
 
 TTL은 지정하지 않는다. Ingress annotation으로만 설정 가능한데 `task-api` Ingress까지 고쳐야 하고, 재구축 자체가 15분 이상이라 전파 시간(5분→1분) 단축이 묻힌다.
 
