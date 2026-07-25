@@ -29,7 +29,7 @@ main
   - ArgoCD가 직접 바라보는 배포 브랜치는 아닙니다.
 
 deploy/dev
-  - ArgoCD dev-root Application이 바라보는 브랜치입니다.
+  - ArgoCD root Application이 바라보는 브랜치입니다.
   - dev 환경의 실제 배포 상태를 관리합니다.
   - GitHub Actions가 image tag 변경 commit을 push하는 브랜치입니다.
 ```
@@ -39,7 +39,7 @@ deploy/dev
 ```text
 GitHub Actions가 deploy/dev에 image tag 변경 commit push
   ↓
-ArgoCD dev-root Application이 변경 감지
+ArgoCD root Application이 변경 감지
   ↓
 argo-task-api Application 갱신
   ↓
@@ -53,12 +53,15 @@ EKS에 새 image 배포
 ```text
 gitops-argocd
 ├── README.md
+├── docs
 └── clusters
     └── dev
-        ├── applications
-        │   └── argo-task-api.yaml
-        └── bootstrap
-            └── root-application.yaml
+        ├── applications      # Child Application 정의. root가 이 경로를 감시한다
+        ├── cert-manager      # ClusterIssuer
+        ├── edge              # Ingress, Middleware (task-api, platform)
+        ├── karpenter         # NodePool, EC2NodeClass
+        ├── monitoring        # ServiceMonitor, AlertmanagerConfig
+        └── secretops         # ClusterSecretStore, ExternalSecret
 ```
 
 ---
@@ -67,8 +70,10 @@ gitops-argocd
 
 | 파일 | 역할 |
 |---|---|
-| `clusters/dev/bootstrap/root-application.yaml` | ArgoCD가 `gitops-argocd` repository의 `clusters/dev/applications` 경로를 감시하도록 하는 Root Application. |
+| `clusters/dev/applications/*.yaml` | ArgoCD Child Application. `root`가 이 디렉터리를 감시하며, 각 파일이 Helm chart 또는 이 repository의 다른 경로를 배포한다. |
 | `clusters/dev/applications/argo-task-api.yaml` | 실제 `task-api` 애플리케이션을 배포하는 ArgoCD Child Application. |
+
+`root` Application 자체는 이 repository에 없다. `aws-eks-terraform-lab`의 `cluster/argocd.tf`가 `argocd-apps` chart로 생성하며, 감시 대상 repository·branch·경로는 같은 모듈의 `argocd_root_app_*` 변수로 정해진다.
 
 ---
 
@@ -77,7 +82,7 @@ gitops-argocd
 이 repository는 ArgoCD의 App of Apps 패턴을 사용합니다.
 
 ```text
-dev-root Application
+root Application
   ↓
 gitops-argocd/deploy/dev/clusters/dev/applications 감시
   ↓
@@ -90,7 +95,7 @@ EKS argo-task-api namespace에 배포
 
 ### Root Application
 
-`dev-root` Application은 `gitops-argocd` repository를 감시합니다.
+`root` Application은 `gitops-argocd` repository를 감시합니다. 이 Application은 Terraform(`aws-eks-terraform-lab/cluster/argocd.tf`)이 생성하므로 이 repository에는 정의가 없습니다.
 
 ```yaml
 source:
@@ -224,10 +229,10 @@ kubectl get app -n argocd
 ```text
 NAME            SYNC STATUS   HEALTH STATUS
 argo-task-api   Synced        Healthy
-dev-root        Synced        Healthy
+root            Synced        Healthy
 ```
 
-`dev-root`와 `argo-task-api`가 모두 `Synced / Healthy`이면 GitOps 동기화와 애플리케이션 배포가 정상입니다.
+`root`와 `argo-task-api`가 모두 `Synced / Healthy`이면 GitOps 동기화와 애플리케이션 배포가 정상입니다.
 
 ---
 
@@ -267,7 +272,7 @@ GitHub Actions
   ↓
 gitops-argocd/deploy/dev
   ↓
-ArgoCD dev-root Application
+ArgoCD root Application
   ↓
 ArgoCD argo-task-api Application
   ↓
