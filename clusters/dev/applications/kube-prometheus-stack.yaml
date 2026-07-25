@@ -18,6 +18,7 @@ spec:
 
         prometheus:
           prometheusSpec:
+            externalUrl: https://prometheus.lhrm-lab.com
             serviceMonitorSelectorNilUsesHelmValues: false
             serviceMonitorNamespaceSelector: {}
             podMonitorSelectorNilUsesHelmValues: false
@@ -46,6 +47,7 @@ spec:
         alertmanager:
           enabled: true
           alertmanagerSpec:
+            externalUrl: https://alertmanager.lhrm-lab.com
             alertmanagerConfigSelector:
               matchLabels:
                 alertmanagerConfig: task-api-slack
