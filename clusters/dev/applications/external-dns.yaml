@@ -1,0 +1,55 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: external-dns
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+
+  source:
+    repoURL: https://kubernetes-sigs.github.io/external-dns/
+    chart: external-dns
+    targetRevision: 1.21.1
+    helm:
+      values: |
+        provider:
+          name: cloudflare
+
+        sources:
+          - ingress
+
+        domainFilters:
+          - lhrm-lab.com
+
+        policy: upsert-only
+
+        registry: txt
+        txtOwnerId: eks-dev
+        txtPrefix: edns-
+
+        extraArgs:
+          - --cloudflare-proxied=false
+          - --ingress-class=traefik
+
+        env:
+          - name: CF_API_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: cloudflare-api-token
+                key: api-token
+
+        dryRun: true
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: external-dns
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

@@ -21,11 +21,23 @@
 
 ## 재구축 후 체크리스트
 
+ExternalDNS 도입 후에는 DNS도 자동 갱신되므로 수동 작업이 없다. 아래는 확인 절차다.
+
+```bash
+kubectl -n external-dns get pods
+kubectl -n external-dns logs deploy/external-dns --tail=50
+kubectl get ingress -A                       # 7개 ADDRESS가 새 LB hostname으로 일치
+dig +short grafana.lhrm-lab.com              # 새 LB hostname으로 갱신되었는지
+dig +short TXT edns-grafana.lhrm-lab.com     # owner=eks-dev 유지 확인
+kubectl get certificate -A                   # 5장 READY=True
+```
+
+Ingress, Middleware, Secret, DNS 모두 Argo CD·ESO·ExternalDNS가 자동 복구한다.
+
+ExternalDNS가 동작하지 않을 때의 수동 fallback:
+
 1. `kubectl -n traefik get svc traefik -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'`
 2. Cloudflare CNAME 5개(`task-api` 포함)를 새 LB hostname으로 수정한다.
-3. `kubectl get certificate -A`에서 전부 `READY=True`인지 확인한다.
-
-Ingress, Middleware, Secret은 Argo CD와 ESO가 자동 복구하므로 DNS만 수동으로 갱신한다.
 
 ## staging 인증서 시험
 
@@ -75,13 +87,65 @@ kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.pas
 
 ## 롤백
 
+`root` Application이 `clusters/dev/applications`를 `selfHeal` + `prune`으로 감시하므로 `kubectl delete application <name>`은 약 3분 내 되살아난다. **롤백은 Git revert로 한다.**
+
 ```bash
-kubectl -n argocd delete application platform-edge
-kubectl -n monitoring delete secret observability-basic-auth
+git revert <commit>
+git push origin deploy/dev
 ```
 
-`deletionPolicy: Retain`이므로 ExternalSecret 삭제 후 BasicAuth Secret은 수동 삭제해야 한다. ASM 값은 `AWSPREVIOUS`로 복원할 수 있고 Terraform 컨테이너에는 `prevent_destroy`가 적용되어 있다. task-api와 port-forward 경로는 유지된다.
+Argo CD가 동기화하면서 리소스를 제거한다. 이후 남는 것을 수동으로 정리한다.
 
-## TODO
+```bash
+kubectl -n monitoring delete secret observability-basic-auth
+kubectl -n external-dns delete secret cloudflare-api-token
+```
 
-ExternalDNS 도입 시 Cloudflare API 토큰 → ASM → ExternalSecret → 컨트롤러 순으로 구성하고, 기존 task-api 레코드를 보호하도록 `policy: upsert-only`를 사용한다.
+`deletionPolicy: Retain`이므로 ExternalSecret이 사라져도 Secret은 남는다. ASM 값은 `AWSPREVIOUS`로 복원할 수 있고 Terraform 컨테이너에는 `prevent_destroy`가 적용되어 있다. task-api와 port-forward 경로는 유지된다.
+
+## ExternalDNS
+
+Ingress의 host를 읽어 Cloudflare에 CNAME을 자동 등록·갱신한다. 재구축으로 LB hostname이 바뀌어도 사람이 DNS를 손대지 않는다.
+
+```text
+Ingress(host) → ExternalDNS → Cloudflare API → CNAME + TXT(소유권)
+```
+
+| 설정 | 값 | 이유 |
+|---|---|---|
+| `policy` | `upsert-only` | 삭제를 원천 차단. 재구축 시 필요한 동작은 타깃 갱신(upsert)뿐이다 |
+| `registry` | `txt` | 소유권을 TXT로 표시해 남의 레코드를 덮어쓰지 않는다 |
+| `txtOwnerId` | `eks-dev` | **변경 금지.** 바뀌면 기존 레코드 소유권을 잃는다 |
+| `txtPrefix` | `edns-` | CNAME과 TXT 이름을 분리한다. DNS 규격상 CNAME은 같은 이름에 다른 레코드와 공존할 수 없다 |
+| `sources` | `[ingress]` | Service를 넣으면 Traefik LB 자기 자신을 등록한다 |
+| `--cloudflare-proxied=false` | | HTTP-01 발급을 위해 DNS only를 유지해야 한다 |
+
+TTL은 지정하지 않는다. Ingress annotation으로만 설정 가능한데 `task-api` Ingress까지 고쳐야 하고, 재구축 자체가 15분 이상이라 전파 시간(5분→1분) 단축이 묻힌다.
+
+### 최초 인계
+
+기존 5개 레코드는 손으로 만들어 TXT 소유권이 없다. 1회 삭제 후 ExternalDNS가 재생성하게 한다.
+
+1. `dryRun: true`로 배포해 로그에서 생성 대상을 확인한다.
+2. `dryRun`을 제거한다.
+3. `grafana` CNAME 1건만 삭제하고 CNAME + `edns-grafana` TXT가 생성되는지 본다.
+4. 성공하면 `prometheus`, `alertmanager`, `argocd`를 삭제한다.
+5. 마지막에 `task-api`를 삭제한다.
+
+### 주의
+
+- **호스트명을 바꾸거나 서비스를 제거하면 옛 CNAME과 `edns-` TXT가 남는다.** `upsert-only`는 삭제하지 않으므로 Cloudflare에서 수동으로 지운다.
+- 토큰을 회전하면 Pod가 자동 재시작되지 않는다.
+
+```bash
+kubectl -n external-dns rollout restart deploy external-dns
+```
+
+### 토큰
+
+Cloudflare API 토큰은 `Zone:DNS:Edit` + `Zone:Zone:Read` 권한으로 `lhrm-lab.com` 단일 zone에만 발급한다. Global API Key는 사용하지 않는다.
+
+```text
+Cloudflare → ASM /aws-eks-terraform-lab/dev/dns/cloudflare (API_TOKEN)
+          → ExternalSecret → Secret cloudflare-api-token (api-token) → CF_API_TOKEN
+```
