@@ -195,11 +195,16 @@ env:
   DB_PORT: "5432"
   DB_NAME: taskdb
   DB_USER: taskuser
-  DB_PASSWORD: taskpass
+
+secret:
+  create: false
+  existingSecret: task-api-runtime-secrets
 
 ingress:
   enabled: false
 ```
+
+Credential 공급 경로는 `AWS Secrets Manager → External Secrets Operator → Kubernetes Secret → task-api workload`로 전환 완료.
 
 설정 이유는 다음과 같습니다.
 
@@ -208,6 +213,8 @@ ingress:
 | `pullPolicy: Always` | EKS Node가 ECR에서 image를 pull하도록 설정합니다. |
 | `DB_HOST: argo-task-api-postgresdb` | ArgoCD 배포 시 생성되는 PostgreSQL Service 이름에 맞춥니다. |
 | `ingress.enabled: false` | Ingress Controller가 없는 상태에서 ArgoCD Health가 `Progressing`으로 남는 문제를 방지합니다. |
+| `secret.create: false` | Chart의 자체 Secret 생성 비활성화 완료. |
+| `secret.existingSecret: task-api-runtime-secrets` | ESO가 동기화한 Kubernetes Secret 참조 완료. |
 
 ---
 
