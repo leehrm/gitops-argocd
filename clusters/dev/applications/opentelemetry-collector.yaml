@@ -47,7 +47,7 @@ spec:
             batch: {}
 
           exporters:
-            otlp/tempo:
+            otlp_grpc/tempo:
               endpoint: tempo.tracing.svc.cluster.local:4317
               tls:
                 insecure: true
@@ -63,7 +63,7 @@ spec:
                   - memory_limiter
                   - batch
                 exporters:
-                  - otlp/tempo
+                  - otlp_grpc/tempo
 
         ports:
           otlp:
