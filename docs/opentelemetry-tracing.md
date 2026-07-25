@@ -171,7 +171,7 @@ Collector는 `alternateConfig`를 사용해 Chart의 기본 logs, metrics, Jaege
 otlp receiver
   -> memory_limiter processor
   -> batch processor
-  -> otlp/tempo exporter
+  -> otlp_grpc/tempo exporter
 ```
 
 `health_check` extension은 Kubernetes liveness/readiness probe를 위해 유지한다. `memory_limiter`는 container memory limit의 80%를 soft limit, 25%를 spike limit으로 사용한다.
