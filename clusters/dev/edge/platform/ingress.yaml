@@ -1,0 +1,166 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: platform-http
+  namespace: monitoring
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.middlewares: monitoring-redirect-to-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: grafana.lhrm-lab.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kube-prometheus-stack-grafana
+                port:
+                  number: 80
+    - host: prometheus.lhrm-lab.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kube-prometheus-stack-prometheus
+                port:
+                  number: 9090
+    - host: alertmanager.lhrm-lab.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kube-prometheus-stack-alertmanager
+                port:
+                  number: 9093
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana-https
+  namespace: monitoring
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    cert-manager.io/cluster-issuer: letsencrypt-production
+    acme.cert-manager.io/http01-ingress-ingressclassname: traefik
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - grafana.lhrm-lab.com
+      secretName: grafana-lhrm-lab-com-tls
+  rules:
+    - host: grafana.lhrm-lab.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kube-prometheus-stack-grafana
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: observability-https
+  namespace: monitoring
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    cert-manager.io/cluster-issuer: letsencrypt-production
+    acme.cert-manager.io/http01-ingress-ingressclassname: traefik
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.middlewares: monitoring-observability-basic-auth@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - prometheus.lhrm-lab.com
+      secretName: prometheus-lhrm-lab-com-tls
+    - hosts:
+        - alertmanager.lhrm-lab.com
+      secretName: alertmanager-lhrm-lab-com-tls
+  rules:
+    - host: prometheus.lhrm-lab.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kube-prometheus-stack-prometheus
+                port:
+                  number: 9090
+    - host: alertmanager.lhrm-lab.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kube-prometheus-stack-alertmanager
+                port:
+                  number: 9093
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd-http
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.middlewares: argocd-redirect-to-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: argocd.lhrm-lab.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: argocd-server
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd-https
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    cert-manager.io/cluster-issuer: letsencrypt-production
+    acme.cert-manager.io/http01-ingress-ingressclassname: traefik
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - argocd.lhrm-lab.com
+      secretName: argocd-lhrm-lab-com-tls
+  rules:
+    - host: argocd.lhrm-lab.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: argocd-server
+                port:
+                  number: 80
