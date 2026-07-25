@@ -28,7 +28,7 @@ kubectl -n external-dns get pods
 kubectl -n external-dns logs deploy/external-dns --tail=50
 kubectl get ingress -A                       # 7개 ADDRESS가 새 LB hostname으로 일치
 dig +short grafana.lhrm-lab.com              # 새 LB hostname으로 갱신되었는지
-dig +short TXT edns-grafana.lhrm-lab.com     # owner=eks-dev 유지 확인
+dig +short TXT edns-cname-grafana.lhrm-lab.com   # owner=eks-dev 유지 확인
 kubectl get certificate -A                   # 5장 READY=True
 ```
 
@@ -120,6 +120,8 @@ Ingress(host) → ExternalDNS → Cloudflare API → CNAME + TXT(소유권)
 | `sources` | `[ingress]` | Service를 넣으면 Traefik LB 자기 자신을 등록한다 |
 | `--ingress-class` | `traefik` | 감시 대상을 Traefik Ingress로 한정한다 |
 
+TXT 레코드의 실제 이름은 prefix 뒤에 레코드 타입이 끼어든 **`edns-cname-<host>`** 형태다 (예: `edns-cname-grafana.lhrm-lab.com`). `edns-grafana`로 조회하면 나오지 않는다.
+
 `--cloudflare-proxied` 는 **지정하지 않는다.** 인자 파서(kingpin)가 불리언 플래그의 `=false` 형식을 거부해 `flag parsing error: unexpected false` 로 기동에 실패한다. 기본값이 이미 `false`(DNS only)라 HTTP-01 발급에 문제가 없다. 특정 호스트만 Proxied로 바꾸려면 해당 Ingress에 `external-dns.alpha.kubernetes.io/cloudflare-proxied` annotation을 붙인다.
 
 TTL은 지정하지 않는다. Ingress annotation으로만 설정 가능한데 `task-api` Ingress까지 고쳐야 하고, 재구축 자체가 15분 이상이라 전파 시간(5분→1분) 단축이 묻힌다.
@@ -130,7 +132,7 @@ TTL은 지정하지 않는다. Ingress annotation으로만 설정 가능한데 `
 
 1. 배포 후 로그가 `All records are already up to date`인지 확인한다. 기존 레코드에는 소유권 TXT가 없어 ExternalDNS가 손대지 않는 것이 정상이다.
 2. 시험 실행이 필요하면 chart 값이 아니라 `extraArgs`에 `--dry-run`을 넣는다. chart 1.21.1에는 `dryRun` 값이 없어 무시된다.
-3. `grafana` CNAME 1건만 삭제하고 CNAME + `edns-grafana` TXT가 생성되는지 본다.
+3. `grafana` CNAME 1건만 삭제하고 CNAME + `edns-cname-grafana` TXT가 생성되는지 본다.
 4. 성공하면 `prometheus`, `alertmanager`, `argocd`를 삭제한다.
 5. 마지막에 `task-api`를 삭제한다.
 
