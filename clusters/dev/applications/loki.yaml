@@ -48,6 +48,12 @@ spec:
         gateway:
           enabled: true
 
+        lokiCanary:
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: http-metrics
+
         monitoring:
           serviceMonitor:
             enabled: true
