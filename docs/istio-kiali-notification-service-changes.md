@@ -1,8 +1,8 @@
 # Istio·Kiali Notification Service 구현 설명서
 
-이 문서는 기존 Traefik 환경을 유지하면서 비교용 Istio 환경에 실제 내부 서비스 통신을 추가한 결과를 설명한다. 먼저 전체 구조를 쉽게 설명하고, 이어서 파일별 변경과 보안 정책을 기술적으로 정리한다.
+이 문서는 기존 Traefik 환경을 유지하면서 비교용 Istio 환경에 실제 내부 서비스 통신을 추가한 결과를 설명한다. 전체 구조, 파일별 변경, 보안 정책과 검증 결과를 정리한다.
 
-## 한 문장으로 설명
+## 요약
 
 기존 Task API는 완료 알림을 직접 Slack에 보낸다. 비교용 Istio Task API는 알림 내용을 별도 Notification Service에 전달하고, Notification Service가 Slack에 보낸다. 두 서비스 사이에는 Envoy sidecar가 있어 통신을 암호화하고 신원을 확인하며, Kiali는 그 흐름을 그래프로 보여 준다.
 
@@ -62,7 +62,7 @@ Istio 경로에서는 공개 TLS가 Istio Gateway에서 끝난다. Gateway는 �
 
 즉, 기존 TLS termination을 Traefik에서 Istio Gateway로 **교체한 것이 아니다**. 기존 hostname과 Traefik 경로는 그대로 유지했고, Istio Gateway에서 TLS를 종료하는 새 hostname과 별도 배포 경로를 병렬로 추가했다. 또한 사용자부터 애플리케이션까지 하나의 TLS 연결이 이어지는 구조가 아니라, Gateway에서 public TLS가 끝나고 Gateway와 sidecar 사이에서 인증서 종류와 목적이 다른 mesh mTLS 연결이 새로 시작된다.
 
-## 먼저 알아둘 용어
+## 용어
 
 ### Workload
 
@@ -102,26 +102,26 @@ ConfigMap 내용의 해시값을 Pod template annotation에 넣는 방식이다.
 
 ## 핵심 설계 결정
 
-### 새 repository와 image를 만들지 않았다
+### 기존 Traefik 환경을 유지한 이유
 
-Task API image는 이미 `app/` 전체를 포함한다. 같은 image를 사용하되 실행 명령만 나눴다.
+이번 작업의 목적은 기존 ingress를 Istio로 즉시 교체하는 것이 아니라, 기존 구조와 service mesh 구조를 같은 cluster에서 비교하는 것이다. 기존 경로까지 함께 변경하면 Gateway, sidecar, mTLS, Notification Service 중 무엇이 동작 차이를 만들었는지 구분하기 어려워진다. 따라서 Traefik 환경을 대조군으로 유지하고 Istio 환경을 별도 namespace와 hostname에 병렬 배포했다.
 
-```text
-Task API:
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
-
-Notification Service:
-python -m uvicorn app.notification_main:app --host 0.0.0.0 --port 8000
-```
-
-별도 Deployment, Service, ServiceAccount가 있으므로 Kubernetes와 Istio 관점에서는 독립 workload다. 별도 artifact는 두 서비스의 배포 주기를 실제로 분리해야 할 때 추가하면 된다.
-
-### 기존 Traefik 환경은 바꾸지 않았다
+두 환경의 역할은 다음과 같이 분리했다.
 
 - `argo-task-api`: `NOTIFIER=slack` 유지
 - `argo-task-api-istio`: `NOTIFIER=service`로 변경
 - 기존 public hostname과 Traefik 경로는 그대로 유지
 - 인증 없는 `/tasks` public route는 추가하지 않음
+
+이 구조를 선택한 이유는 다음과 같다.
+
+- **비교 가능성**: sidecar가 없는 기존 흐름과 sidecar·mTLS가 있는 흐름의 latency, 오류율, traffic graph를 나란히 확인할 수 있다.
+- **기존 경로 보호**: `task-api.lhrm-lab.com`의 DNS, 인증서, Traefik routing과 기존 호출 동작에 영향을 주지 않는다.
+- **장애 범위 분리**: Istio 설정이나 Notification Service에 문제가 생겨도 기존 Task API의 직접 Slack 알림 경로는 계속 사용할 수 있다.
+- **즉시 rollback**: 비교용 Istio Application만 중지하거나 제거하면 기존 경로로 돌아갈 수 있으며, ingress를 다시 Traefik으로 복구하는 작업이 필요 없다.
+- **TLS 비교**: 기존 공개 TLS가 Traefik에서 종료되는 흐름과 공개 TLS가 Istio Gateway에서 종료된 뒤 mesh mTLS로 이어지는 흐름을 동시에 관찰할 수 있다.
+
+Traefik을 반드시 계속 사용해야 하는 기술적 제약이 있는 것은 아니다. Istio 환경 검증 후 실제 진입 경로를 교체할지는 별도의 전환 작업으로 판단한다.
 
 ### 알림 실패가 task 완료를 되돌리지 않는다
 
@@ -131,9 +131,7 @@ Task 상태는 Notification Service를 호출하기 전에 DB에 commit된다. �
 
 ### `.env.example`
 
-쉽게 설명하면 Task API가 Notification Service의 위치를 찾기 위한 주소 예시를 추가했다.
-
-기술적으로 `NOTIFICATION_SERVICE_URL`을 Kubernetes service DNS 형식으로 문서화했다.
+Task API가 Notification Service의 위치를 찾을 수 있도록 `NOTIFICATION_SERVICE_URL`을 Kubernetes service DNS 형식으로 문서화했다.
 
 ```text
 http://notification-service.notification-service.svc.cluster.local:8000
@@ -141,9 +139,7 @@ http://notification-service.notification-service.svc.cluster.local:8000
 
 ### `app/services/notification_service.py`
 
-쉽게 설명하면 알림을 직접 Slack에 보낼지, 다른 서비스에 전달할지 선택할 수 있게 했다.
-
-기술적으로 다음을 변경했다.
+알림을 Slack에 직접 보낼지 Notification Service에 전달할지 선택할 수 있도록 다음을 변경했다.
 
 - `NotificationServiceClient`가 `POST /notifications/task-completed`를 호출한다.
 - Python 표준 라이브러리 `urllib.request`를 재사용해 dependency를 추가하지 않았다.
@@ -156,9 +152,7 @@ http://notification-service.notification-service.svc.cluster.local:8000
 
 ### `app/notification_main.py`
 
-쉽게 설명하면 Slack 전송만 담당하는 작은 FastAPI 애플리케이션을 추가했다.
-
-기술적으로 다음 endpoint를 제공한다.
+Slack 전송을 담당하는 FastAPI 애플리케이션을 추가하고 다음 endpoint를 제공한다.
 
 - `GET /healthz`: 프로세스 liveness 확인
 - `GET /readyz`: Slack webhook 설정 존재 여부 확인
@@ -183,9 +177,7 @@ Notification Service의 health, readiness, 정상 `204`, 입력 오류 `422`, Sl
 
 ### `.github/workflows/ci-cd.yaml`
 
-쉽게 설명하면 같은 프로그램을 쓰는 세 workload가 서로 다른 버전을 실행하지 않게 했다.
-
-기술적으로 다음을 변경했다.
+같은 image를 사용하는 세 workload가 서로 다른 버전을 실행하지 않도록 CI를 다음과 같이 변경했다.
 
 - Python 3.12에서 `pytest -q`를 실행한다.
 - 기존 Task API image tag를 갱신한다.
