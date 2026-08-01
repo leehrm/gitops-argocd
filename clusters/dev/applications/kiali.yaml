@@ -1,0 +1,48 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kiali
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+
+  source:
+    repoURL: https://kiali.org/helm-charts
+    chart: kiali-server
+    targetRevision: 2.29.0
+    helm:
+      values: |
+        auth:
+          strategy: anonymous
+
+        deployment:
+          service_type: ClusterIP
+
+        external_services:
+          prometheus:
+            url: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+          grafana:
+            enabled: true
+            internal_url: http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local
+            external_url: https://grafana.lhrm-lab.com
+          tracing:
+            enabled: true
+            internal_url: http://tempo.tracing.svc.cluster.local:3200
+            external_url: https://grafana.lhrm-lab.com
+            provider: tempo
+            use_grpc: false
+            tempo_config:
+              datasource_uid: tempo
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-system
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
