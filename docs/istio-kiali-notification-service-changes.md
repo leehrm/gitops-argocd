@@ -6,40 +6,61 @@
 
 기존 Task API는 완료 알림을 직접 Slack에 보낸다. 비교용 Istio Task API는 알림 내용을 별도 Notification Service에 전달하고, Notification Service가 Slack에 보낸다. 두 서비스 사이에는 Envoy sidecar가 있어 통신을 암호화하고 신원을 확인하며, Kiali는 그 흐름을 그래프로 보여 준다.
 
-## 최종 구조
+## “기존 비교 기준선”이란
 
-기존 비교 기준선은 그대로 남아 있다.
+비교 기준선은 새 구조와 비교하기 위해 **바꾸지 않고 남겨 둔 기존 환경**이다. 같은 Pod에 진입점만 하나 더 붙인 것이 아니다. 애플리케이션 image와 DB·Redis는 공유하지만, 기존 환경과 Istio 환경은 namespace, Deployment, Pod, Service, 외부 진입 경로가 서로 다른 별도 배포다.
+
+`TLS termination(TLS 종료)`은 하나의 암호화 연결을 복호화하고 끝내는 지점을 뜻한다. 그 뒤에 새 TLS 또는 mTLS 연결을 다시 시작할 수 있으므로, TLS가 종료됐다고 해서 이후 모든 구간이 반드시 plaintext인 것은 아니다.
+
+| 항목 | 기존 비교 기준선 | Istio 비교 환경 |
+|---|---|---|
+| 목적 | 기존 동작을 유지하는 대조군 | service mesh 동작을 검증하는 실험군 |
+| public hostname | `task-api.lhrm-lab.com` | `task-api-istio.lhrm-lab.com` |
+| 외부 진입점 | Traefik | Istio Gateway Envoy |
+| namespace | `argo-task-api` | `argo-task-api-istio` |
+| Task API Pod | 기존 별도 Pod, sidecar 없음 | 비교용 별도 Pod, Envoy sidecar 있음 |
+| public TLS 종료 지점 | Traefik | Istio Gateway Envoy |
+| proxy 이후 구간 | Traefik → Task API: HTTP | Gateway → Task API sidecar: 별도 mTLS |
+| 완료 알림 | Task API가 Slack 직접 호출 | Task API → Notification Service → Slack |
+| Kiali 가시성 | mesh 외부라 service 간 edge 없음 | Gateway 및 service 간 traffic 확인 가능 |
+
+## 최종 구조와 TLS 종료 지점
+
+기존 Traefik 경로에서는 공개 TLS가 Traefik에서 끝난다. Traefik이 요청을 복호화한 뒤 Task API에는 cluster 내부 HTTP로 전달한다. Task API가 Slack을 호출할 때에는 애플리케이션이 별도의 HTTPS 연결을 만들고, 이 연결은 Slack에서 끝난다.
 
 ```text
-Internet
-  -> Traefik
-  -> 기존 Task API
-  -> Slack webhook
+사용자
+  == public HTTPS ==>
+[Traefik: public TLS 종료]
+  -- cluster HTTP -->
+[argo-task-api Service]
+  -- HTTP -->
+[기존 Task API Pod: sidecar 없음]
+  == 별도 HTTPS ==>
+[Slack: HTTPS 종료]
 ```
 
-Istio 비교 환경은 다음과 같다.
+Istio 경로에서는 공개 TLS가 Istio Gateway에서 끝난다. Gateway는 복호화한 요청을 그대로 plaintext로 보내지 않고, Task API sidecar와 **새로운 Istio mTLS 연결**을 만든다. sidecar가 mTLS를 끝내고 같은 Pod의 애플리케이션에는 local HTTP로 전달한다.
 
 ```text
-Internet
-  -> Istio Gateway
-  == mTLS ==>
-  -> Istio Task API sidecar
-  -> Task API
-       |
-       | task 완료
-       v
-     NotificationServiceClient
-       |
-       | cluster HTTP (Task API sidecar가 가로챔)
-       v
-  == mTLS ==>
-     Notification Service sidecar
-       ->
-     Notification Service
-       -> Slack webhook
+사용자
+  == public HTTPS ==>
+[Istio Gateway Envoy: public TLS 종료]
+  == 별도 Istio mTLS ==>
+[Task API Envoy sidecar: mesh mTLS 종료]
+  -- Pod 내부 local HTTP -->
+[비교용 Task API]
+  -- NotificationServiceClient의 HTTP 요청 -->
+[Task API Envoy sidecar]
+  == Istio mTLS ==>
+[Notification Service Envoy sidecar: mesh mTLS 종료]
+  -- Pod 내부 local HTTP -->
+[Notification Service]
+  == 애플리케이션이 만든 HTTPS, sidecar는 pass-through ==>
+[Slack: HTTPS 종료]
 ```
 
-애플리케이션은 평범한 HTTP를 사용한다. 실제 암호화와 인증서 교환은 각 Pod의 Envoy가 처리한다.
+즉, 기존 TLS termination을 Traefik에서 Istio Gateway로 **교체한 것이 아니다**. 기존 hostname과 Traefik 경로는 그대로 유지했고, Istio Gateway에서 TLS를 종료하는 새 hostname과 별도 배포 경로를 병렬로 추가했다. 또한 사용자부터 애플리케이션까지 하나의 TLS 연결이 이어지는 구조가 아니라, Gateway에서 public TLS가 끝나고 Gateway와 sidecar 사이에서 인증서 종류와 목적이 다른 mesh mTLS 연결이 새로 시작된다.
 
 ## 먼저 알아둘 용어
 
