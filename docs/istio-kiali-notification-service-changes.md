@@ -72,6 +72,8 @@ Kubernetes에서 실행되는 애플리케이션 단위임. 이 문서에서는 
 
 애플리케이션 container 옆에서 함께 실행되는 보조 proxy임. Istio의 Envoy sidecar는 들어오고 나가는 traffic을 대신 처리하고 metric을 기록함.
 
+현재 Istio `1.30.3`은 Kubernetes native sidecar 방식을 사용함. `istio-proxy`는 Pod spec의 `.spec.initContainers` 아래에 `restartPolicy: Always`로 표시되지만 application과 함께 계속 실행되며, Task API와 Notification Service Pod의 READY는 각각 `2/2`로 표시됨.
+
 ### mTLS
 
 Mutual TLS의 약자임. 통신 양쪽이 서로 인증서를 확인한 뒤 암호화해서 대화함. 일반 TLS가 주로 서버만 증명한다면 mTLS는 client와 server가 모두 신원을 증명함.
@@ -361,17 +363,6 @@ kubectl exec -n argo-task-api deployment/argo-task-api -c api -- \
 
 예상 결과는 connection reset과 non-zero exit code임.
 
-## Rollback 순서
-
-1. 두 AuthorizationPolicy 제거
-2. 두 PeerAuthentication `STRICT` 제거
-3. 비교용 Task API ExternalSecret에 Slack webhook mapping 복구
-4. 비교용 Task API를 `NOTIFIER=slack`으로 복구
-5. rollout과 Slack 직접 호출 확인
-6. Notification Service Application과 ExternalSecret 제거
-
-기존 Traefik Task API는 rollback 대상이 아님.
-
 ## 의도적으로 제외한 범위
 
 - queue, Kafka/RabbitMQ
@@ -384,10 +375,6 @@ kubectl exec -n argo-task-api deployment/argo-task-api -c api -- \
 - Python HTTP client의 trace context 전파
 
 알림의 보장 전달이나 서비스별 독립 배포가 실제 요구사항이 될 때 queue/outbox 또는 별도 artifact를 검토함.
-
-## 보안 후속 조치
-
-검증 과정에서 기존 Slack webhook 값이 작업 transcript에 base64 형태로 노출됨. Slack webhook을 재발급하고 AWS Secrets Manager의 `TASK_COMPLETION_WEBHOOK_URL`을 교체해야 함. Git 저장소에는 webhook 값이 들어 있지 않음.
 
 ## 주요 작업 commit
 

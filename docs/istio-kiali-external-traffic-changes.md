@@ -133,9 +133,20 @@ Traefik을 반드시 유지해야 하는 기술적 제약이 있는 것은 아�
 - 기존 Helm chart를 `argo-task-api-istio` namespace의 별도 Application으로 배포함
 - `managedNamespaceMetadata`에 `istio-injection=enabled`를 선언함
 - Pod 생성 시 application container 옆에 `istio-proxy` Envoy container를 자동 주입함
+- Istio `1.30.3`은 Kubernetes native sidecar 방식을 사용하므로 `istio-proxy`가 `.spec.initContainers` 아래에 `restartPolicy: Always`로 표시됨
+- native sidecar도 application과 함께 계속 실행되므로 `kubectl get pods`의 READY는 `2/2`로 표시됨
 - 기존 환경과 독립된 Deployment, Service, Pod를 사용함
 - 비교 환경의 비용과 변수를 줄이기 위해 replica 1개와 HPA 비활성화를 적용함
 - 외부 ingress는 Helm chart에서 비활성화하고 Gateway API HTTPRoute만 사용함
+
+일반 container 목록만 조회하면 `api`만 보여 sidecar가 없는 것으로 오해할 수 있음. 다음처럼 init container 목록과 재시작 정책을 함께 확인함.
+
+```bash
+kubectl get pod -n argo-task-api-istio \
+  -o jsonpath='{range .items[*]}{.metadata.name}{" "}{range .spec.initContainers[*]}{.name}{":"}{.restartPolicy}{","}{end}{"\n"}{end}'
+```
+
+정상 결과에는 `istio-proxy:Always`가 포함됨.
 
 #### `clusters/dev/secretops/externalsecret-task-api-istio.yaml`
 
