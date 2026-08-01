@@ -48,7 +48,8 @@ spec:
           REDIS_HOST: "redis-master.redis.svc.cluster.local"
           REDIS_PORT: "6379"
 
-          NOTIFIER: "slack"
+          NOTIFIER: "service"
+          NOTIFICATION_SERVICE_URL: "http://notification-service.notification-service.svc.cluster.local:8000"
 
           ENABLE_DEBUG_ENDPOINTS: "true"
           DEBUG_SLOW_SECONDS: "0.3"
