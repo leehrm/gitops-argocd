@@ -11,7 +11,7 @@ spec:
       kind: Gateway
       name: task-api-istio-gateway
       namespace: istio-ingress
-      sectionName: http
+      sectionName: task-api-https
   rules:
     - matches:
         - path:
