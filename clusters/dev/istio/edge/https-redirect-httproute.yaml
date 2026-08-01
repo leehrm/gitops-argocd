@@ -1,25 +1,25 @@
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
-  name: kiali
-  namespace: istio-system
+  name: https-redirect
+  namespace: istio-ingress
 spec:
   hostnames:
+    - task-api-istio.lhrm-lab.com
     - kiali.lhrm-lab.com
   parentRefs:
     - group: gateway.networking.k8s.io
       kind: Gateway
       name: task-api-istio-gateway
       namespace: istio-ingress
-      sectionName: kiali-https
+      sectionName: http
   rules:
     - matches:
         - path:
             type: PathPrefix
             value: /
-      backendRefs:
-        - group: ""
-          kind: Service
-          name: kiali
-          port: 20001
-          weight: 1
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301

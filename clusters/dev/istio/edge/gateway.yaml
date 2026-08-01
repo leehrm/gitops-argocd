@@ -12,3 +12,29 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
+    - name: task-api-https
+      hostname: task-api-istio.lhrm-lab.com
+      protocol: HTTPS
+      port: 443
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - group: ""
+            kind: Secret
+            name: istio-gateway-lhrm-lab-com-tls
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: kiali-https
+      hostname: kiali.lhrm-lab.com
+      protocol: HTTPS
+      port: 443
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - group: ""
+            kind: Secret
+            name: istio-gateway-lhrm-lab-com-tls
+      allowedRoutes:
+        namespaces:
+          from: All
