@@ -15,7 +15,7 @@ spec:
     helm:
       values: |
         auth:
-          strategy: anonymous
+          strategy: token
 
         deployment:
           service_type: ClusterIP

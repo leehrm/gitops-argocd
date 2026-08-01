@@ -4,6 +4,8 @@ metadata:
   name: task-api-istio
   namespace: argo-task-api-istio
 spec:
+  hostnames:
+    - task-api-istio.lhrm-lab.com
   parentRefs:
     - group: gateway.networking.k8s.io
       kind: Gateway
