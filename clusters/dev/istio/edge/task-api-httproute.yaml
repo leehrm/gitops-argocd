@@ -5,7 +5,9 @@ metadata:
   namespace: argo-task-api-istio
 spec:
   parentRefs:
-    - name: task-api-istio-gateway
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: task-api-istio-gateway
       namespace: istio-ingress
       sectionName: http
   rules:
@@ -20,5 +22,8 @@ spec:
             type: Exact
             value: /readyz
       backendRefs:
-        - name: argo-task-api-istio
+        - group: ""
+          kind: Service
+          name: argo-task-api-istio
           port: 8000
+          weight: 1
