@@ -8,6 +8,13 @@ metadata:
 spec:
   project: default
 
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      name: istiod-default-validator
+      jsonPointers:
+        - /webhooks/0/failurePolicy
+
   source:
     repoURL: https://istio-release.storage.googleapis.com/charts
     chart: base
@@ -23,4 +30,5 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - RespectIgnoreDifferences=true
       - ServerSideApply=true
