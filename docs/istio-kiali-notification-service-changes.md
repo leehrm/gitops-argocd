@@ -1,0 +1,393 @@
+# Istio·Kiali Notification Service 구현 설명서
+
+이 문서는 기존 Traefik 환경을 유지하면서 비교용 Istio 환경에 실제 내부 서비스 통신을 추가한 결과를 설명한다. 먼저 전체 구조를 쉽게 설명하고, 이어서 파일별 변경과 보안 정책을 기술적으로 정리한다.
+
+## 한 문장으로 설명
+
+기존 Task API는 완료 알림을 직접 Slack에 보낸다. 비교용 Istio Task API는 알림 내용을 별도 Notification Service에 전달하고, Notification Service가 Slack에 보낸다. 두 서비스 사이에는 Envoy sidecar가 있어 통신을 암호화하고 신원을 확인하며, Kiali는 그 흐름을 그래프로 보여 준다.
+
+## 최종 구조
+
+기존 비교 기준선은 그대로 남아 있다.
+
+```text
+Internet
+  -> Traefik
+  -> 기존 Task API
+  -> Slack webhook
+```
+
+Istio 비교 환경은 다음과 같다.
+
+```text
+Internet
+  -> Istio Gateway
+  == mTLS ==>
+  -> Istio Task API sidecar
+  -> Task API
+       |
+       | task 완료
+       v
+     NotificationServiceClient
+       |
+       | cluster HTTP (Task API sidecar가 가로챔)
+       v
+  == mTLS ==>
+     Notification Service sidecar
+       ->
+     Notification Service
+       -> Slack webhook
+```
+
+애플리케이션은 평범한 HTTP를 사용한다. 실제 암호화와 인증서 교환은 각 Pod의 Envoy가 처리한다.
+
+## 먼저 알아둘 용어
+
+### Workload
+
+Kubernetes에서 실행되는 애플리케이션 단위다. 이 문서에서는 Task API와 Notification Service Deployment가 각각 별도 workload다.
+
+### Sidecar
+
+애플리케이션 container 옆에서 함께 실행되는 보조 proxy다. Istio의 Envoy sidecar는 들어오고 나가는 traffic을 대신 처리하고 metric을 기록한다.
+
+### mTLS
+
+Mutual TLS의 약자다. 통신 양쪽이 서로 인증서를 확인한 뒤 암호화해서 대화한다. 일반 TLS가 주로 서버만 증명한다면 mTLS는 client와 server가 모두 신원을 증명한다.
+
+### PeerAuthentication
+
+Istio workload가 plaintext를 받을 수 있는지, mTLS만 받을지 정하는 정책이다. `STRICT`는 mTLS가 아닌 연결을 거부한다.
+
+### AuthorizationPolicy
+
+mTLS로 확인한 workload 신원을 기준으로 어떤 요청을 허용할지 정하는 정책이다. 암호화되었다는 사실만으로 모든 요청을 허용하지 않는다.
+
+### ServiceAccount와 principal
+
+ServiceAccount는 Kubernetes workload의 신원이다. Istio는 이를 다음과 같은 principal 문자열로 표현한다.
+
+```text
+cluster.local/ns/<namespace>/sa/<service-account>
+```
+
+### ExternalSecret
+
+AWS Secrets Manager 같은 외부 저장소의 값을 Kubernetes Secret으로 동기화하는 리소스다. Git에는 실제 webhook 값이 아니라 remote key와 property 이름만 남는다.
+
+### ConfigMap checksum
+
+ConfigMap 내용의 해시값을 Pod template annotation에 넣는 방식이다. 설정이 바뀌면 해시도 달라져 Kubernetes가 새 Pod를 자동으로 rollout한다.
+
+## 핵심 설계 결정
+
+### 새 repository와 image를 만들지 않았다
+
+Task API image는 이미 `app/` 전체를 포함한다. 같은 image를 사용하되 실행 명령만 나눴다.
+
+```text
+Task API:
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+Notification Service:
+python -m uvicorn app.notification_main:app --host 0.0.0.0 --port 8000
+```
+
+별도 Deployment, Service, ServiceAccount가 있으므로 Kubernetes와 Istio 관점에서는 독립 workload다. 별도 artifact는 두 서비스의 배포 주기를 실제로 분리해야 할 때 추가하면 된다.
+
+### 기존 Traefik 환경은 바꾸지 않았다
+
+- `argo-task-api`: `NOTIFIER=slack` 유지
+- `argo-task-api-istio`: `NOTIFIER=service`로 변경
+- 기존 public hostname과 Traefik 경로는 그대로 유지
+- 인증 없는 `/tasks` public route는 추가하지 않음
+
+### 알림 실패가 task 완료를 되돌리지 않는다
+
+Task 상태는 Notification Service를 호출하기 전에 DB에 commit된다. 내부 호출 또는 Slack 전송이 실패하면 로그와 metric에는 실패가 남지만 task 완료 상태는 유지된다.
+
+## `task-api-platform` 파일별 변경
+
+### `.env.example`
+
+쉽게 설명하면 Task API가 Notification Service의 위치를 찾기 위한 주소 예시를 추가했다.
+
+기술적으로 `NOTIFICATION_SERVICE_URL`을 Kubernetes service DNS 형식으로 문서화했다.
+
+```text
+http://notification-service.notification-service.svc.cluster.local:8000
+```
+
+### `app/services/notification_service.py`
+
+쉽게 설명하면 알림을 직접 Slack에 보낼지, 다른 서비스에 전달할지 선택할 수 있게 했다.
+
+기술적으로 다음을 변경했다.
+
+- `NotificationServiceClient`가 `POST /notifications/task-completed`를 호출한다.
+- Python 표준 라이브러리 `urllib.request`를 재사용해 dependency를 추가하지 않았다.
+- JSON body는 task의 `id`, `title`만 포함한다.
+- timeout은 2초이며 자동 retry하지 않는다.
+- `NOTIFIER=service`이면 내부 client를 선택한다.
+- 내부 URL이 없으면 시작 자체를 깨지 않고 `NullNotifier`로 fallback하며 경고를 남긴다.
+- 기존 `SlackNotifier`는 직접 호출 환경과 Notification Service 양쪽에서 재사용한다.
+- Notification Service에서는 Slack 오류를 HTTP 5xx로 표현할 수 있도록 예외 전파 옵션을 사용한다.
+
+### `app/notification_main.py`
+
+쉽게 설명하면 Slack 전송만 담당하는 작은 FastAPI 애플리케이션을 추가했다.
+
+기술적으로 다음 endpoint를 제공한다.
+
+- `GET /healthz`: 프로세스 liveness 확인
+- `GET /readyz`: Slack webhook 설정 존재 여부 확인
+- `POST /notifications/task-completed`: 입력 검증 후 Slack 전송
+
+요청의 `id`는 양수, `title`은 1~255자로 검증한다. Slack 성공은 `204`, webhook 미설정은 `503`, Slack 호출 실패는 `502`로 응답한다. DB와 Redis는 사용하지 않는다.
+
+### `tests/test_notification.py`
+
+다음 동작을 검증한다.
+
+- 내부 client가 정확한 URL, JSON, timeout으로 호출하는지
+- 내부 호출 오류가 caller에게 전달되는지
+- `NOTIFIER=service` 선택과 URL 누락 fallback
+- SlackNotifier의 기존 best-effort 동작과 Notification Service용 오류 전파 동작
+
+### `tests/test_notification_api.py`
+
+Notification Service의 health, readiness, 정상 `204`, 입력 오류 `422`, Slack 실패 `502`를 검증한다.
+
+전체 애플리케이션 테스트 결과는 `43 passed`였다.
+
+### `.github/workflows/ci-cd.yaml`
+
+쉽게 설명하면 같은 프로그램을 쓰는 세 workload가 서로 다른 버전을 실행하지 않게 했다.
+
+기술적으로 다음을 변경했다.
+
+- Python 3.12에서 `pytest -q`를 실행한다.
+- 기존 Task API image tag를 갱신한다.
+- 비교용 Istio Task API image tag도 함께 갱신한다.
+- Notification Service Kustomize `newTag`가 존재하면 함께 갱신한다.
+- 세 tag 변경을 한 GitOps commit으로 push한다.
+
+최종 검증 image tag는 `8300b8e`다.
+
+### `helm/task-api/templates/deployment.yaml`
+
+ConfigMap checksum annotation을 Pod template에 추가했다.
+
+```yaml
+checksum/config: <rendered ConfigMap hash>
+```
+
+이 변경이 없으면 Argo CD가 `NOTIFIER=service`로 ConfigMap을 바꿔도 기존 Pod는 이전 환경변수를 계속 사용한다. checksum이 달라지면 Deployment가 자동 rollout되어 새 설정을 읽는다.
+
+## `gitops-argocd` 파일별 변경
+
+### `clusters/dev/applications/notification-service.yaml`
+
+Notification Service 리소스를 관리하는 Argo CD child Application이다.
+
+- source: `clusters/dev/notification-service`
+- destination namespace: `notification-service`
+- namespace에 `istio-injection=enabled` 적용
+- auto sync, prune, self-heal 사용
+
+### `clusters/dev/notification-service/kustomization.yaml`
+
+Notification Service manifest를 묶고 image를 치환한다. CI가 `newTag`를 갱신하므로 Task API와 같은 image version을 사용한다.
+
+### `clusters/dev/notification-service/deployment.yaml`
+
+Notification Service Pod를 실행한다.
+
+- replica 1개
+- 기존 task-api image 재사용
+- 실행 entrypoint를 `app.notification_main:app`으로 override
+- Slack Secret을 `envFrom`으로 주입
+- health와 readiness probe 사용
+- 전용 ServiceAccount 사용
+- capability 제거, privilege escalation 금지, seccomp 적용
+
+초기에는 `runAsNonRoot: true`도 선언했지만 image의 `USER app`이 이름 기반이라 kubelet이 숫자 UID를 검증하지 못했다. image가 이미 non-root user를 사용하므로 이 중복 항목만 제거했고 나머지 보안 설정은 유지했다.
+
+### `clusters/dev/notification-service/service.yaml`
+
+cluster 내부에서만 접근할 수 있는 ClusterIP Service다. 8000번 포트 이름을 `http`로 지정해 Istio가 HTTP traffic으로 인식하게 한다.
+
+### `clusters/dev/notification-service/serviceaccount.yaml`
+
+Notification Service 전용 identity를 만든다.
+
+```text
+cluster.local/ns/notification-service/sa/notification-service
+```
+
+### `clusters/dev/secretops/externalsecret-notification-service.yaml`
+
+기존 AWS Secrets Manager의 task completion Slack webhook을 Notification Service namespace로 동기화한다. DB와 Redis Secret은 포함하지 않는다.
+
+### `clusters/dev/applications/argo-task-api-istio.yaml`
+
+비교용 Task API 설정을 다음처럼 변경했다.
+
+```text
+NOTIFIER=service
+NOTIFICATION_SERVICE_URL=http://notification-service.notification-service.svc.cluster.local:8000
+```
+
+기존 `argo-task-api` Application은 `NOTIFIER=slack`을 계속 사용한다.
+
+### `clusters/dev/secretops/externalsecret-task-api-istio.yaml`
+
+비교용 Task API Secret에서 `NOTIFY_WEBHOOK_URL` mapping을 제거했다. 최종 Secret에는 DB와 Redis password만 남는다. Slack credential은 Notification Service만 가진다.
+
+### `clusters/dev/applications/istio-workload-policies.yaml`
+
+두 namespace의 Istio 보안 정책을 함께 관리하는 Argo CD child Application이다. 정책 manifest가 여러 namespace에 있으므로 destination namespace를 고정하지 않는다.
+
+### `clusters/dev/istio/policies/*-peerauthentication.yaml`
+
+`argo-task-api-istio`와 `notification-service` namespace에 각각 `STRICT` mTLS를 적용한다.
+
+```yaml
+spec:
+  mtls:
+    mode: STRICT
+```
+
+sidecar 없는 workload의 plaintext 연결은 TLS handshake 전에 reset된다.
+
+### `clusters/dev/istio/policies/argo-task-api-istio-authorizationpolicy.yaml`
+
+실제 Gateway Pod의 ServiceAccount를 조회한 뒤 principal을 고정했다.
+
+```text
+cluster.local/ns/istio-ingress/sa/task-api-istio-gateway-istio
+```
+
+이 principal이 Task API 8000번 포트의 다음 GET 경로를 호출하는 것만 허용한다.
+
+- `/version`
+- `/healthz`
+- `/readyz`
+
+### `clusters/dev/istio/policies/notification-service-authorizationpolicy.yaml`
+
+비교용 Task API의 실제 identity만 알림 endpoint를 호출할 수 있다.
+
+```text
+cluster.local/ns/argo-task-api-istio/sa/default
+```
+
+Task API Helm chart에 ServiceAccount 연결 template가 없으므로 비교 namespace의 `default` ServiceAccount를 사용한다. 허용 범위는 8000번 포트의 `POST /notifications/task-completed`다.
+
+## 실제 검증 결과
+
+| 검증 | 결과 |
+|---|---|
+| Argo CD Applications | `Synced / Healthy` |
+| Task API Pod | 앱 + Envoy `2/2 Running` |
+| Notification Service Pod | 앱 + Envoy `2/2 Running` |
+| Gateway → Task API | HTTPS `/version` 성공 |
+| Task 완료 → 내부 서비스 → Slack | 성공, Notification Service `204` |
+| Istio telemetry | `argo-task-api-istio -> notification-service`, destination reporter `mutual_tls` |
+| STRICT plaintext 차단 | sidecar 없는 기존 Task API 요청이 connection reset |
+| 미인가 mTLS 차단 | Notification Service identity의 두 대상 요청이 `403 Forbidden` |
+| 허용된 identity | Task API principal의 알림 POST 성공 |
+| 테스트 데이터 | 검증 task 삭제 완료 |
+
+source reporter의 `connection_security_policy`는 `unknown`일 수 있다. 실제 수신 연결을 판정하는 destination reporter에서 `mutual_tls`을 확인했다.
+
+## Kiali에서 확인하는 방법
+
+1. Kiali Traffic Graph를 연다.
+2. namespace에서 `argo-task-api-istio`, `notification-service`를 함께 선택한다.
+3. 시간 범위를 최근 5~10분으로 둔다.
+4. 아래 task 완료 요청을 실행한다.
+5. `argo-task-api-istio -> notification-service` edge와 lock/mTLS 표시, 요청량, latency, 오류율을 확인한다.
+
+```bash
+kubectl -n argo-task-api-istio port-forward svc/argo-task-api-istio 18000:8000
+```
+
+다른 terminal에서 실행한다.
+
+```bash
+TASK_ID=$(curl -sS -X POST http://127.0.0.1:18000/tasks \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"kiali internal traffic test"}' | jq -r '.id')
+
+curl -sS -X PATCH "http://127.0.0.1:18000/tasks/${TASK_ID}" \
+  -H 'Content-Type: application/json' \
+  -d '{"done":true}'
+
+curl -i -X DELETE "http://127.0.0.1:18000/tasks/${TASK_ID}"
+```
+
+## 정책 확인 명령
+
+```bash
+kubectl get peerauthentication -A
+kubectl get authorizationpolicy -A
+kubectl get pods -n argo-task-api-istio
+kubectl get pods -n notification-service
+```
+
+plaintext 차단은 sidecar 없는 기존 Task API에서 확인할 수 있다.
+
+```bash
+kubectl exec -n argo-task-api deployment/argo-task-api -c api -- \
+  python -c 'import urllib.request; urllib.request.urlopen(
+    "http://notification-service.notification-service.svc.cluster.local:8000/healthz",
+    timeout=3,
+  )'
+```
+
+예상 결과는 connection reset과 non-zero exit code다.
+
+## Rollback 순서
+
+1. 두 AuthorizationPolicy를 제거한다.
+2. 두 PeerAuthentication `STRICT`를 제거한다.
+3. 비교용 Task API ExternalSecret에 Slack webhook mapping을 복구한다.
+4. 비교용 Task API를 `NOTIFIER=slack`으로 되돌린다.
+5. rollout과 Slack 직접 호출을 확인한다.
+6. Notification Service Application과 ExternalSecret을 제거한다.
+
+기존 Traefik Task API는 rollback 대상이 아니다.
+
+## 의도적으로 제외한 범위
+
+- queue, Kafka/RabbitMQ
+- 자동 retry
+- transactional outbox
+- 별도 Notification repository와 ECR
+- public `/tasks` route
+- mesh 전체에 적용하는 global STRICT
+- RDS, Redis, Slack egress의 별도 Istio 정책
+- Python HTTP client의 trace context 전파
+
+알림의 보장 전달이나 서비스별 독립 배포가 실제 요구사항이 될 때 queue/outbox 또는 별도 artifact를 검토한다.
+
+## 보안 후속 조치
+
+검증 과정에서 기존 Slack webhook 값이 작업 transcript에 base64 형태로 노출되었다. Slack webhook을 재발급하고 AWS Secrets Manager의 `TASK_COMPLETION_WEBHOOK_URL`을 교체해야 한다. Git 저장소에는 webhook 값이 들어 있지 않다.
+
+## 주요 작업 commit
+
+### `task-api-platform`
+
+- `e458dd4` — Notification Service endpoint와 client
+- `4970877` — 테스트 및 세 workload image tag 동기화 CI
+- `e13f102` — ConfigMap 변경 시 자동 rollout
+
+### `gitops-argocd`
+
+- `4860c3e` — Notification Service 배포 리소스
+- `f1715cb` — 이름 기반 non-root image 실행 수정
+- `eba7de5` — Istio Task API 내부 알림 라우팅
+- `e85c3f7` — 두 namespace STRICT mTLS
+- `ea29306` — workload identity AuthorizationPolicy
