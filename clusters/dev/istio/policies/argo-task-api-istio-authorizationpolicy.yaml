@@ -1,0 +1,26 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-istio-gateway
+  namespace: argo-task-api-istio
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: task-api
+      app.kubernetes.io/component: api
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/istio-ingress/sa/task-api-istio-gateway-istio
+      to:
+        - operation:
+            ports:
+              - "8000"
+            methods:
+              - GET
+            paths:
+              - /version
+              - /healthz
+              - /readyz
