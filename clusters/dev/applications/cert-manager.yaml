@@ -18,6 +18,10 @@ spec:
 
         prometheus:
           enabled: true
+
+        config:
+          gatewayAPI:
+            enabled: true
   destination:
     server: https://kubernetes.default.svc
     namespace: cert-manager
