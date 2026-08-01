@@ -8,7 +8,7 @@ spec:
   issuerRef:
     group: cert-manager.io
     kind: ClusterIssuer
-    name: letsencrypt-staging-gateway
+    name: letsencrypt-production-gateway
   dnsNames:
     - task-api-istio.lhrm-lab.com
     - kiali.lhrm-lab.com
