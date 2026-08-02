@@ -47,12 +47,13 @@ spec:
                   import urllib.request
                   from datetime import datetime, timedelta, timezone
 
-                  base_url = os.environ["TASK_API_URL"].rstrip("/")
+                  task_api_url = os.environ["TASK_API_URL"].rstrip("/")
+                  public_task_api_url = os.environ["PUBLIC_TASK_API_URL"].rstrip("/")
 
-                  def call(method, path, payload=None):
+                  def call(method, url, payload=None):
                       data = None if payload is None else json.dumps(payload).encode()
                       request = urllib.request.Request(
-                          f"{base_url}{path}",
+                          url,
                           data=data,
                           method=method,
                           headers={"Content-Type": "application/json"},
@@ -61,19 +62,28 @@ spec:
                           body = response.read()
                           return None if not body else json.loads(body)
 
-                  now = datetime.now(timezone(timedelta(hours=9))).isoformat(timespec="seconds")
-                  created = call("POST", "/tasks", {"title": f"Kiali traffic check {now}"})
-                  task_id = created["id"]
-
                   try:
-                      call("PATCH", f"/tasks/{task_id}", {"done": True})
+                      call("GET", f"{public_task_api_url}/version")
                   finally:
-                      call("DELETE", f"/tasks/{task_id}")
+                      now = datetime.now(timezone(timedelta(hours=9))).isoformat(timespec="seconds")
+                      created = call(
+                          "POST",
+                          f"{task_api_url}/tasks",
+                          {"title": f"Kiali traffic check {now}"},
+                      )
+                      task_id = created["id"]
 
-                  print(f"generated task completion traffic for task_id={task_id}")
+                      try:
+                          call("PATCH", f"{task_api_url}/tasks/{task_id}", {"done": True})
+                      finally:
+                          call("DELETE", f"{task_api_url}/tasks/{task_id}")
+
+                  print(f"generated external and internal traffic for task_id={task_id}")
               env:
                 - name: TASK_API_URL
                   value: http://argo-task-api-istio.argo-task-api-istio.svc.cluster.local:8000
+                - name: PUBLIC_TASK_API_URL
+                  value: https://task-api-istio.lhrm-lab.com
               resources:
                 requests:
                   cpu: 10m
