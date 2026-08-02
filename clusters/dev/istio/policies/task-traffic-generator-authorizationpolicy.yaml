@@ -1,0 +1,32 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-task-traffic-generator
+  namespace: argo-task-api-istio
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: task-api
+      app.kubernetes.io/component: api
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/argo-task-api-istio/sa/task-traffic-generator
+      to:
+        - operation:
+            ports:
+              - "8000"
+            methods:
+              - POST
+            paths:
+              - /tasks
+        - operation:
+            ports:
+              - "8000"
+            methods:
+              - PATCH
+              - DELETE
+            paths:
+              - /tasks/*
