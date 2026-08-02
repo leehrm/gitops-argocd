@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: task-traffic-generator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/leehrm/gitops-argocd.git
+    targetRevision: deploy/dev
+    path: clusters/dev/task-traffic-generator
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argo-task-api-istio
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
