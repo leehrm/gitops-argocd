@@ -1,0 +1,100 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: task-traffic-generator
+  namespace: argo-task-api-istio
+  labels:
+    app.kubernetes.io/name: task-traffic-generator
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: task-traffic-generator
+  namespace: argo-task-api-istio
+  labels:
+    app.kubernetes.io/name: task-traffic-generator
+spec:
+  schedule: "*/15 * * * *"
+  timeZone: Asia/Seoul
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 600
+      activeDeadlineSeconds: 120
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: task-traffic-generator
+            app.kubernetes.io/version: v1
+        spec:
+          serviceAccountName: task-traffic-generator
+          restartPolicy: Never
+          containers:
+            - name: generator
+              image: 519330023984.dkr.ecr.ap-northeast-1.amazonaws.com/task-api:8300b8e
+              imagePullPolicy: IfNotPresent
+              command:
+                - python
+                - -c
+              args:
+                - |
+                  import json
+                  import os
+                  import urllib.request
+                  from datetime import datetime, timedelta, timezone
+
+                  task_api_url = os.environ["TASK_API_URL"].rstrip("/")
+                  public_task_api_url = os.environ["PUBLIC_TASK_API_URL"].rstrip("/")
+
+                  def call(method, url, payload=None):
+                      data = None if payload is None else json.dumps(payload).encode()
+                      request = urllib.request.Request(
+                          url,
+                          data=data,
+                          method=method,
+                          headers={"Content-Type": "application/json"},
+                      )
+                      with urllib.request.urlopen(request, timeout=10) as response:
+                          body = response.read()
+                          return None if not body else json.loads(body)
+
+                  try:
+                      call("GET", f"{public_task_api_url}/version")
+                  finally:
+                      now = datetime.now(timezone(timedelta(hours=9))).isoformat(timespec="seconds")
+                      created = call(
+                          "POST",
+                          f"{task_api_url}/tasks",
+                          {"title": f"Kiali traffic check {now}"},
+                      )
+                      task_id = created["id"]
+
+                      try:
+                          call("PATCH", f"{task_api_url}/tasks/{task_id}", {"done": True})
+                      finally:
+                          call("DELETE", f"{task_api_url}/tasks/{task_id}")
+
+                  print(f"generated external and internal traffic for task_id={task_id}")
+              env:
+                - name: TASK_API_URL
+                  value: http://argo-task-api-istio.argo-task-api-istio.svc.cluster.local:8000
+                - name: PUBLIC_TASK_API_URL
+                  value: https://task-api-istio.lhrm-lab.com
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  cpu: 100m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                seccompProfile:
+                  type: RuntimeDefault
