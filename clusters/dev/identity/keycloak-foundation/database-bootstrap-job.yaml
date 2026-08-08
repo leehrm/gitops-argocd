@@ -54,8 +54,8 @@ spec:
                 psql --quiet --no-psqlrc --set=ON_ERROR_STOP=1 \
                   --set=db_user="$DB_USERNAME" <<'SQL'
               SELECT format(
-                'REVOKE %I FROM %I GRANTED BY %I',
-                :'db_user', current_user, current_user
+                'REVOKE SET OPTION FOR %I FROM %I',
+                :'db_user', current_user
               )
               \gexec
               SQL
