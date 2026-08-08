@@ -1,0 +1,42 @@
+apiVersion: k8s.keycloak.org/v2beta1
+kind: Keycloak
+metadata:
+  name: keycloak
+  namespace: keycloak
+spec:
+  instances: 1
+
+  hostname:
+    hostname: https://keycloak.lhrm-lab.com
+
+  ingress:
+    enabled: false
+
+  http:
+    httpEnabled: true
+    httpPort: 8080
+    serviceHttpPort: 8080
+
+  db:
+    vendor: postgres
+    host: aws-eks-terraform-lab-postgres-primary.c3888iw0yn00.ap-northeast-1.rds.amazonaws.com
+    port: 5432
+    database: keycloak
+    usernameSecret:
+      name: keycloak-db
+      key: DB_USERNAME
+    passwordSecret:
+      name: keycloak-db
+      key: DB_PASSWORD
+    poolInitialSize: 5
+    poolMinSize: 5
+    poolMaxSize: 10
+
+  additionalOptions:
+    - name: metrics-enabled
+      value: "true"
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
