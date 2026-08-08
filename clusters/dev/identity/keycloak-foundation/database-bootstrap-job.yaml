@@ -48,6 +48,27 @@ spec:
                 :'db_user', :'db_password'
               )
               \gexec
+              SQL
+
+              revoke_membership() {
+                psql --quiet --no-psqlrc --set=ON_ERROR_STOP=1 \
+                  --set=db_user="$DB_USERNAME" <<'SQL'
+              SELECT format(
+                'REVOKE %I FROM %I GRANTED BY %I',
+                :'db_user', current_user, current_user
+              )
+              \gexec
+              SQL
+              }
+              trap revoke_membership EXIT
+
+              psql --no-psqlrc --set=ON_ERROR_STOP=1 \
+                --set=db_name="$DB_NAME" --set=db_user="$DB_USERNAME" <<'SQL'
+              SELECT format(
+                'GRANT %I TO %I WITH SET TRUE, INHERIT FALSE',
+                :'db_user', current_user
+              )
+              \gexec
 
               SELECT format('CREATE DATABASE %I OWNER %I', :'db_name', :'db_user')
               WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = :'db_name')
@@ -56,6 +77,9 @@ spec:
               SELECT format('ALTER DATABASE %I OWNER TO %I', :'db_name', :'db_user')
               \gexec
               SQL
+
+              revoke_membership
+              trap - EXIT
 
               bootstrap_ok="$(
                 psql --no-psqlrc --set=ON_ERROR_STOP=1 --tuples-only --no-align \
@@ -78,7 +102,7 @@ spec:
                 JOIN pg_database AS d ON d.datdba = r.oid
                 WHERE r.rolname = :'db_user'
                   AND d.datname <> :'db_name'
-              );
+              ) AND NOT pg_has_role(current_user, :'db_user', 'SET');
               SQL
               )"
 
