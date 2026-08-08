@@ -9,6 +9,9 @@ spec:
   hostname:
     hostname: https://keycloak.lhrm-lab.com
 
+  proxy:
+    headers: xforwarded
+
   ingress:
     enabled: false
 
